@@ -1,0 +1,20 @@
+{
+    "PartPasswds": [
+        {
+            "ref_count": 32,
+            "password": "admin"
+        },
+        {
+            "ref_count": 32,
+            "password": "admin123"
+        }
+    ],
+    "NodeRecords": {
+        "mike@127.0.0.1": {
+            "password": "123"
+        },
+        "mike@8.8.8.8": {
+            "password": "456"
+        }
+    }
+}

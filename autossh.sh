@@ -200,6 +200,14 @@ get_password() {
     return 1
 }
 
+test_password()
+{
+    export SSHPASS=$USER_PASSWORD
+    # 在远程主机上执行exit 0命令，执行成功说明密码正确
+    sshpass -e ssh -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST exit 0
+    return $?
+}
+
 login_with_openssh() {
     sshpass -e ssh -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST
     return $?
@@ -280,6 +288,7 @@ get_login_target() {
 }
 
 auto_login() {
+    local errcode=$?
     # 不断获取密码，重试登录
     while true; do
         if [[ -n $USER_PASSWORD ]]; then
@@ -288,24 +297,25 @@ auto_login() {
             get_password
         fi
 
-        login_with_password
-        local errcode=$?
-        if [[ $errcode -eq 0 ]]; then
-            # 成功退出后，更新密码至数据库中
-            # 密码来自数据库，说明已经存在，不需要更新
-            if [[ $PASSWORD_PROVIDER != $PASSWORD_PROVIDER_DB ]]; then
-                set_password_to_db
-            fi
-            break
-        else
+        test_password
+        errcode=$?
+        if [[ $errcode -ne 0 ]]; then
             # 密码错误时，清理掉用户的密码，重新获取密码
             USER_PASSWORD=""
+            if [[ $errcode -eq 5 && $PASSWORD_PROVIDER == $PASSWORD_PROVIDER_DB ]]; then
+                HOST_RECORD_ERROR=1
+            fi
+        else
+            if [[ $PASSWORD_PROVIDER != $PASSWORD_PROVIDER_DB ]]; then
+                set_password_to_db || echo "Password save failed"
+            fi
+            break
         fi
 
-        if [[ $errcode -eq 5 && $PASSWORD_PROVIDER == $PASSWORD_PROVIDER_DB ]]; then
-            HOST_RECORD_ERROR=1
-        fi
     done
+
+    login_with_password
+    return $?
 }
 
 main() {

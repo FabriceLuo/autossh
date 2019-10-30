@@ -10,11 +10,15 @@ USER_PASSWORD=""
 USER_NAME="root"
 USER_HOST=""
 
+ROOT_USER_NAME="root"
+
 PASSWORD_PROVIDER=""
 PASSWORD_PROVIDER_USER="user"
 PASSWORD_PROVIDER_DB="db"
 PASSWORD_PROVIDER_AUTO="auto"
 PASSWORD_PROVIDER_PUBKEY="public_key"
+
+PUBLIC_KEY_PATH=~/.ssh/id_rsa.pub
 
 HOST_RECORD_EXIST=1
 HOST_RECORD_ERROR=0
@@ -200,11 +204,127 @@ get_password() {
     return 1
 }
 
+get_current_user_public_key()
+{
+    if [[ ! -f ${PUBLIC_KEY_PATH} ]]; then
+        echo "public key file(${PUBLIC_KEY_PATH}) is not exists"
+        return 1
+    fi
+
+    cat "${PUBLIC_KEY_PATH}"
+    return $?
+}
+
+get_remote_public_key_path()
+{
+    if [[ $USER_NAME == $ROOT_USER_NAME ]]; then
+        echo "/root/.ssh/authorized_keys"
+    else
+        echo "/home/${USER_NAME}/.ssh/authorized_keys"
+    fi
+    return 0
+}
+
+is_public_key_exist_in_remote()
+{
+    local public_key=$1
+    local remote_public_key_path
+    local remote_public_keys
+
+    remote_public_key_path=$(get_remote_public_key_path)
+    if [[ $? -ne 0 ]]; then
+        echo "get remote public keys file path failed"
+        return 1
+    fi
+
+    login_run_command "test -f ${remote_public_key_path}"
+    if [[ $? -ne 0 ]]; then
+        echo "remote public keys file(${remote_public_key_path}) is not exist"
+        return 1
+    fi
+
+    remote_public_keys=$(login_run_command "cat ${remote_public_key_path}")
+    if [[ $? -ne 0 ]]; then
+        echo "get remote public keys failed"
+        return 1
+    fi
+
+    echo "${remote_public_keys}" | grep "${public_key}" >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "public key on remote not found"
+        return 1
+    fi
+
+    return 0
+}
+
+append_public_key_to_remote()
+{
+    local public_key=$1
+    local remote_public_key_path
+    local remote_public_key_dir
+
+    remote_public_key_path=$(get_remote_public_key_path)
+    if [[ $? -ne 0 ]]; then
+        echo "get remote public keys file path failed"
+        return 1
+    fi
+
+    remote_public_key_dir=$(dirname "${remote_public_key_path}")
+    if [[ $? -ne 0 ]]; then
+        echo "get remote public key file dir failed"
+        return 1
+    fi
+
+    login_run_command "mkdir -p \"${remote_public_key_dir}\""
+    if [[ $? -ne 0 ]]; then
+        echo "prepare public keys file dir failed"
+        return 1
+    fi
+
+    login_run_command "echo \"${public_key}\" >> ${remote_public_key_path}" >/dev/null 2>&1
+    if [[ $? -ne 0 ]]; then
+        echo "append public key to remote host failed"
+        return 1
+    fi
+
+    echo "append public key to host(${USER_HOST}) success"
+    return 0
+}
+
+sync_public_key()
+{
+    local public_key=
+
+    public_key=$(get_current_user_public_key)
+    if [[ $? -ne 0 ]]; then
+        echo "get public key failed"
+        return 1
+    fi
+
+    is_public_key_exist_in_remote "${public_key}"
+    if [[ $? -eq 0 ]]; then
+        return 0
+    fi
+
+    append_public_key_to_remote "${public_key}"
+    return $?
+}
+
+login_run_command()
+{
+    local command=$1
+
+    export SSHPASS=$USER_PASSWORD
+    sshpass -e ssh -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST "${command}"
+
+    return $?
+}
+
 test_password()
 {
-    export SSHPASS=$USER_PASSWORD
     # 在远程主机上执行exit 0命令，执行成功说明密码正确
-    sshpass -e ssh -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST exit 0
+    login_run_command "exit 0"
     return $?
 }
 
@@ -308,6 +428,7 @@ auto_login() {
         else
             if [[ $PASSWORD_PROVIDER != $PASSWORD_PROVIDER_DB ]]; then
                 set_password_to_db || echo "Password save failed"
+                sync_public_key || echo "Sync public key failed"
             fi
             break
         fi

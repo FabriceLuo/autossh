@@ -426,7 +426,7 @@ auto_login() {
                 HOST_RECORD_ERROR=1
             fi
         else
-            if [[ $PASSWORD_PROVIDER != $PASSWORD_PROVIDER_DB ]]; then
+            if [[ $PASSWORD_PROVIDER != $PASSWORD_PROVIDER_DB || $HOST_RECORD_ERROR ]]; then
                 set_password_to_db || echo "Password save failed"
                 sync_public_key || echo "Sync public key failed"
             fi

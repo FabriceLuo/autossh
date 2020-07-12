@@ -22,7 +22,7 @@ PUBLIC_KEY_PATH=~/.ssh/id_rsa.pub
 
 HOST_RECORD_EXIST=1
 HOST_RECORD_ERROR=0
-HOST_RECORD_CONFIG="/etc/autossh/autossh_db.conf"
+HOST_RECORD_CONFIG=~/.autossh/autossh_db.conf
 HOST_RECORD_CONFIG_TEMP="${HOST_RECORD_CONFIG}.temp"
 
 PASSWORD_SUFFIX=""

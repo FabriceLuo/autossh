@@ -41,7 +41,7 @@ SSH_AGENT_OPENSSH="ssh"
 SSH_AGENT_SSHRC="sshrc"
 
 LOGIN_TARGET=""
-LOGIN_TARGET_REGEX="(\w+@)?[0-2]?[0-9]{0,2}(\.[0-2]?[0-9]{0,2}){3}" 
+LOGIN_TARGET_REGEX='\w+@[0-2]?[0-9]{0,2}(\.[0-2]?[0-9]{0,2}){3}:[0-9]{1,}'
 LOGIN_VERBOSE=0
 
 declare -a USER_PART_PASSWORD_ARRAY
@@ -64,14 +64,13 @@ help() {
 init_db_config() {
     local config_dir
     test -e $HOST_RECORD_CONFIG && return 0
-    config_dir=$(dirname $HOST_RECORD_CONFIG)
-    if [[ $? -ne 0 ]]; then
+    
+    if ! config_dir=$(dirname $HOST_RECORD_CONFIG); then
         echo "Get host database config failed"
         return 1
     fi
 
-    mkdir -p "$config_dir"
-    if [[ $? -ne 0 ]]; then
+    if ! mkdir -p "$config_dir"; then
         echo "Create config dir failed"
         return 1
     fi
@@ -88,8 +87,8 @@ EOF
 
 load_db_config() {
     local part_lines
-    part_lines=$(jq -r ".PartPasswds[].password" "$HOST_RECORD_CONFIG")
-    if [[ $? -ne 0 ]]; then
+    
+    if ! part_lines=$(jq -r ".PartPasswds[].password" "$HOST_RECORD_CONFIG"); then
         echo "Load db config failed"
         return 1
     fi
@@ -126,10 +125,7 @@ get_password_from_db() {
 
     HOST_RECORD_EXIST=1
     # 获取记录信息
-    record_passwd=$(jq -r ".NodeRecords.\"${record_index}\".password" "${HOST_RECORD_CONFIG}")
-    if [[ $? -ne 0 ]]; then
-        return 1
-    fi
+    record_passwd=$(jq -r ".NodeRecords.\"${record_index}\".password" "${HOST_RECORD_CONFIG}") || return 1
 
     USER_PASSWORD=$record_passwd
     return 0
@@ -142,7 +138,8 @@ create_password_db_record() {
 }
 
 update_password_db_record() {
-    local record_index=$(get_record_index)
+    local record_index
+    record_index=$(get_record_index)
     # 获取索引，更新索引对应的值
     jq ".NodeRecords.\"${record_index}\" |= {\"password\": \"$USER_PASSWORD\"}" "$HOST_RECORD_CONFIG" > "$HOST_RECORD_CONFIG_TEMP" && mv -f "$HOST_RECORD_CONFIG_TEMP" "$HOST_RECORD_CONFIG"
     return $?
@@ -161,7 +158,7 @@ set_password_to_db() {
 get_password_from_user() {
     echo "Please input password for host(${USER_HOST}) of user(${USER_NAME})"
     echo -n "Password:"
-    read -se USER_PASSWORD
+    read -rse USER_PASSWORD
     echo ""
     return 0
 }
@@ -187,8 +184,7 @@ get_password_from_part() {
 
 get_password() {
     # 从数据库中获取失败，需要手动输入
-    get_password_from_db
-    if [[ $? -eq 0 ]]; then
+    if get_password_from_db; then
         PASSWORD_PROVIDER=$PASSWORD_PROVIDER_DB
         return 0
     fi
@@ -198,8 +194,7 @@ get_password() {
     fi
 
     # 从用户输入
-    get_password_from_user
-    if [[ $? -eq 0 ]]; then
+    if get_password_from_user; then
         PASSWORD_PROVIDER=$PASSWORD_PROVIDER_USER
         if [[ $PASSWORD_APPEND_SUFFIX -eq 1 ]]; then
             USER_PASSWORD="${USER_PASSWORD}${PASSWORD_SUFFIX}"
@@ -222,7 +217,7 @@ get_current_user_public_key()
 
 get_remote_public_key_path()
 {
-    if [[ $USER_NAME == $ROOT_USER_NAME ]]; then
+    if [[ "${USER_NAME}" == "${ROOT_USER_NAME}" ]]; then
         echo "/root/.ssh/authorized_keys"
     else
         echo "/home/${USER_NAME}/.ssh/authorized_keys"
@@ -236,26 +231,22 @@ is_public_key_exist_in_remote()
     local remote_public_key_path
     local remote_public_keys
 
-    remote_public_key_path=$(get_remote_public_key_path)
-    if [[ $? -ne 0 ]]; then
+    if ! remote_public_key_path=$(get_remote_public_key_path); then
         echo "get remote public keys file path failed"
         return 1
     fi
 
-    login_run_command "test -f ${remote_public_key_path}"
-    if [[ $? -ne 0 ]]; then
+    if ! login_run_command "test -f ${remote_public_key_path}"; then
         echo "remote public keys file(${remote_public_key_path}) is not exist"
         return 1
     fi
 
-    remote_public_keys=$(login_run_command "cat ${remote_public_key_path}")
-    if [[ $? -ne 0 ]]; then
+    if ! remote_public_keys=$(login_run_command "cat ${remote_public_key_path}"); then
         echo "get remote public keys failed"
         return 1
     fi
 
-    echo "${remote_public_keys}" | grep "${public_key}" >/dev/null 2>&1
-    if [[ $? -ne 0 ]]; then
+    if ! echo "${remote_public_keys}" | grep "${public_key}" >/dev/null 2>&1; then
         echo "public key on remote not found"
         return 1
     fi
@@ -269,26 +260,22 @@ append_public_key_to_remote()
     local remote_public_key_path
     local remote_public_key_dir
 
-    remote_public_key_path=$(get_remote_public_key_path)
-    if [[ $? -ne 0 ]]; then
+    if ! remote_public_key_path=$(get_remote_public_key_path); then
         echo "get remote public keys file path failed"
         return 1
     fi
 
-    remote_public_key_dir=$(dirname "${remote_public_key_path}")
-    if [[ $? -ne 0 ]]; then
+    if ! remote_public_key_dir=$(dirname "${remote_public_key_path}"); then
         echo "get remote public key file dir failed"
         return 1
     fi
 
-    login_run_command "mkdir -p \"${remote_public_key_dir}\""
-    if [[ $? -ne 0 ]]; then
+    if ! login_run_command "mkdir -p \"${remote_public_key_dir}\""; then
         echo "prepare public keys file dir failed"
         return 1
     fi
 
-    login_run_command "echo \"${public_key}\" >> ${remote_public_key_path}" >/dev/null 2>&1
-    if [[ $? -ne 0 ]]; then
+    if ! login_run_command "echo \"${public_key}\" >> ${remote_public_key_path}" >/dev/null 2>&1; then
         echo "append public key to remote host failed"
         return 1
     fi
@@ -301,14 +288,12 @@ sync_public_key()
 {
     local public_key=
 
-    public_key=$(get_current_user_public_key)
-    if [[ $? -ne 0 ]]; then
+    if ! public_key=$(get_current_user_public_key); then
         echo "get public key failed"
         return 1
     fi
 
-    is_public_key_exist_in_remote "${public_key}"
-    if [[ $? -eq 0 ]]; then
+    if is_public_key_exist_in_remote "${public_key}"; then
         return 0
     fi
 
@@ -349,9 +334,9 @@ login_with_password() {
     export SSHPASS=$USER_PASSWORD
 
     [[ $LOGIN_VERBOSE -ne 0 ]] && echo "user(${USER_NAME}) login to (${USER_HOST}) with password:${USER_PASSWORD}"
-    if [[ $SSH_AGENT == $SSH_AGENT_OPENSSH ]]; then
+    if [[ "${SSH_AGENT}" == "${SSH_AGENT_OPENSSH}" ]]; then
         login_with_openssh
-    elif [[ $SSH_AGENT == $SSH_AGENT_SSHRC ]]; then
+    elif [[ "${SSH_AGENT}" == "${SSH_AGENT_SSHRC}" ]]; then
         login_with_sshrc
     else
         echo "login agent not support:$SSH_AGENT"
@@ -362,7 +347,9 @@ login_with_password() {
 
 get_login_target_from_db() {
     local targets
-    local db_targets=$(jq -r '.NodeRecords | keys | .[]' "$HOST_RECORD_CONFIG")
+    local db_targets
+
+    db_targets=$(jq -r '.NodeRecords | keys | .[]' "$HOST_RECORD_CONFIG")
 
     targets=$(echo "$db_targets" | fzf --print-query)
     local errcode=$?
@@ -384,15 +371,7 @@ init_login_target() {
 
     [[ ! $LOGIN_TARGET =~ $LOGIN_TARGET_REGEX ]] && return 1
     
-    # 如果不包含@，则为IP
-    echo "$LOGIN_TARGET" | grep -q "@"
-    if [[ $? -ne 0 ]]; then
-        USER_HOST=$LOGIN_TARGET
-        return 0
-    fi
-
     # target template: mike@192.168.2.1:22
-
     TEMP_STR="${LOGIN_TARGET%%:*}"
 
     USER_NAME="${TEMP_STR%%@*}"
@@ -406,13 +385,12 @@ init_login_target() {
 get_login_target() {
     # 先从数据库中获取，获取失败或初始化失败时，重新获取
     while true; do
-        get_login_target_from_db
-        if [[ $? -ne 0 ]]; then
+        
+        if ! get_login_target_from_db; then
             continue
         fi
 
-        init_login_target
-        if [[ $? -eq 0 ]]; then
+        if init_login_target; then
             return 0
         fi
     done
@@ -435,11 +413,11 @@ auto_login() {
         if [[ $errcode -ne 0 ]]; then
             # 密码错误时，清理掉用户的密码，重新获取密码
             USER_PASSWORD=""
-            if [[ $errcode -eq 5 && $PASSWORD_PROVIDER == $PASSWORD_PROVIDER_DB ]]; then
+            if [[ $errcode -eq 5 && "${PASSWORD_PROVIDER}" == "${PASSWORD_PROVIDER_DB}" ]]; then
                 HOST_RECORD_ERROR=1
             fi
         else
-            if [[ $PASSWORD_PROVIDER != $PASSWORD_PROVIDER_DB || $HOST_RECORD_ERROR ]]; then
+            if [[ "${PASSWORD_PROVIDER}" != "${PASSWORD_PROVIDER_DB}" || "${HOST_RECORD_ERROR}" ]]; then
                 set_password_to_db || echo "Password save failed"
                 sync_public_key || echo "Sync public key failed"
             fi
@@ -456,7 +434,7 @@ main() {
     local optstring=":P:p:u:i:c:dvhr"
     OPTIND=0
     SSH_AGENT=$SSH_AGENT_OPENSSH
-    while getopts $optstring opt $@; do
+    while getopts $optstring opt "$@"; do
         case $opt in
             'd')
                 PASSWORD_APPEND_SUFFIX=0
@@ -507,4 +485,4 @@ main() {
     return $?
 }
 
-main $@;
+main "$@";

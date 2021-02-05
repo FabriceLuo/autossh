@@ -6,9 +6,12 @@
 # Distributed under terms of the MIT license.
 #
 
-USER_PASSWORD=""
+TEMP_STR=
+
+USER_PASSWORD=
 USER_NAME="root"
-USER_HOST=""
+USER_HOST=
+USER_PORT=22
 
 ROOT_USER_NAME="root"
 
@@ -52,6 +55,8 @@ help() {
     echo "          -i ip, login host ip"
     echo "          -c config_file, config file path"
     echo "          -d, disable append suffix, suffix:${PASSWORD_SUFFIX}"
+    echo "          -r, use sshrc instead of ssh. sshrc can carry scripts"
+    echo "          -P port, the ssh destination port"
     echo "          -v, verbose information"
     exit 0
 }
@@ -96,7 +101,7 @@ load_db_config() {
 }
 
 get_record_index() {
-    echo "${USER_NAME}@${USER_HOST}"
+    echo "${USER_NAME}@${USER_HOST}:${USER_PORT}"
     return 0
 }
 
@@ -316,7 +321,7 @@ login_run_command()
     local command=$1
 
     export SSHPASS=$USER_PASSWORD
-    sshpass -e ssh -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST "${command}"
+    sshpass -e ssh -p $USER_PORT -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST "${command}"
 
     return $?
 }
@@ -329,11 +334,12 @@ test_password()
 }
 
 login_with_openssh() {
-    sshpass -e ssh -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST
+    sshpass -e ssh -p $USER_PORT -o StrictHostKeyChecking=no $USER_NAME@$USER_HOST
     return $?
 }
 
 login_with_sshrc() {
+    # fixme: 增加对port的支持
     sshrc $USER_NAME@$USER_HOST
     return $?
 }
@@ -385,8 +391,15 @@ init_login_target() {
         return 0
     fi
 
-    USER_HOST="${LOGIN_TARGET#*@}"
-    USER_NAME="${LOGIN_TARGET%%@*}"
+    # target template: mike@192.168.2.1:22
+
+    TEMP_STR="${LOGIN_TARGET%%:*}"
+
+    USER_NAME="${TEMP_STR%%@*}"
+    USER_HOST="${TEMP_STR#*@}"
+
+    USER_PORT="${LOGIN_TARGET##*:}"
+
     return 0
 }
 
@@ -440,7 +453,7 @@ auto_login() {
 }
 
 main() {
-    local optstring=":p:u:i:c:dvhr"
+    local optstring=":P:p:u:i:c:dvhr"
     OPTIND=0
     SSH_AGENT=$SSH_AGENT_OPENSSH
     while getopts $optstring opt $@; do
@@ -466,6 +479,9 @@ main() {
                 ;;
             'r')
                 SSH_AGENT=$SSH_AGENT_SSHRC
+                ;;
+            'P')
+                USER_PORT="$OPTARG"
                 ;;
             ':')
                 ;;

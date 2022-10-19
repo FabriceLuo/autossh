@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autossh"
+version = "0.0.1"
+authors = [
+    { name = "Fabrcie Luo", email = "fabriceluo@outlook.com" }
+]
+
+description = "SSH auto-login tool for a large number of sessions."
+readme = "README.md"
+requires-python = ">=3.6"
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/FabriceLuo/autossh"
+"Bug Tracker" = "https://github.com/FabriceLuo/autossh/issues"
+
+[project.scripts]
+autossh = "autossh.main:main"

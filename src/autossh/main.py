@@ -7,12 +7,12 @@
 # Distributed under terms of the MIT license.
 
 """
-
+SSH auto-login tool for a large number of sessions.
 """
 
 def main():
-    """TODO: Docstring for main.
-    Returns: TODO
+    """ the main entry point.
+    Returns: None
 
     """
     print("Hello autossh!")

@@ -8,6 +8,8 @@
 
 TEMP_STR=
 
+DEPENDENCE_BINS=(ssh jq fzf sshpass)
+
 USER_PASSWORD=
 USER_NAME="root"
 USER_HOST=
@@ -17,6 +19,7 @@ USER_ALIAS=""
 
 RUN_MODE_LOGIN="login"
 RUN_MODE_PREVIEW="preview"
+RUN_MODE_HEALTH="health"
 RUN_MODE="login"
 
 ROOT_USER_NAME="root"
@@ -73,9 +76,9 @@ cmd_help() {
 
 init_db_config() {
     local config_dir
-    test -e $HOST_RECORD_CONFIG && return 0
+    test -e "${HOST_RECORD_CONFIG}" && return 0
 
-    if ! config_dir=$(dirname $HOST_RECORD_CONFIG); then
+    if ! config_dir=$(dirname "${HOST_RECORD_CONFIG}"); then
         echo "Get host database config failed"
         return 1
     fi
@@ -477,6 +480,27 @@ cmd_preview() {
     exit 0
 }
 
+cmd_health() {
+    local dependence_path
+    local exit_code=0
+    for dependence_bin in ${DEPENDENCE_BINS[*]}; do
+        if dependence_path=$(which "${dependence_bin}"); then
+            echo -e "${dependence_bin} \t\t is found. path:${dependence_path}"
+        else
+            echo -e "${dependence_bin} \t\t is not found."
+            exit_code=1
+        fi
+    done
+
+    if [[ $exit_code -eq 0 ]]; then
+        echo "All dependences are found."
+    else
+        echo "Some dependences are not found."
+    fi
+
+    exit $exit_code
+}
+
 main() {
     local optstring=":P:p:u:i:l:c:a:m:t:dvhr"
     OPTIND=0
@@ -533,6 +557,9 @@ main() {
         ;;
     "preview")
         cmd_preview
+        ;;
+    "health")
+        cmd_health
         ;;
     *)
         cmd_help

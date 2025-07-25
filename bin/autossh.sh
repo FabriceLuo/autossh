@@ -1,7 +1,7 @@
 #! /bin/bash
 #
 # autossh.sh
-# Copyright (C) 2019 mike <mike@luominghao>
+# Copyright (C) 2025 fabriceluo <fabriceluo@outlook.com>
 #
 # Distributed under terms of the MIT license.
 #
@@ -12,6 +12,12 @@ USER_PASSWORD=
 USER_NAME="root"
 USER_HOST=
 USER_PORT=22
+USER_LABELS=""
+USER_ALIAS=""
+
+RUN_MODE_LOGIN="login"
+RUN_MODE_PREVIEW="preview"
+RUN_MODE="login"
 
 ROOT_USER_NAME="root"
 
@@ -46,25 +52,29 @@ LOGIN_VERBOSE=0
 
 declare -a USER_PART_PASSWORD_ARRAY
 
-help() {
+cmd_help() {
     echo "${0} usage:"
     echo "${0} [-p password] [-u user] [-i ip] [-c config_file] [-d] [-v] to login"
     echo "${0} [-h] to show this usage"
     echo "          -p password, login password"
     echo "          -u user, login user name"
-    echo "          -i ip, login host ip"
+    echo "          -i host, login host address"
     echo "          -c config_file, config file path"
     echo "          -d, disable append suffix, suffix:${PASSWORD_SUFFIX}"
     echo "          -r, use sshrc instead of ssh. sshrc can carry scripts"
     echo "          -P port, the ssh destination port"
+    echo "          -l labels, the target labels. format: label1,label2,label3,..."
+    echo "          -a alias, the target alias"
+    echo "          -m mode, run mode. login|preview"
+    echo "          -t target, target for preview"
     echo "          -v, verbose information"
-    exit 0
+    exit 1
 }
 
 init_db_config() {
     local config_dir
     test -e $HOST_RECORD_CONFIG && return 0
-    
+
     if ! config_dir=$(dirname $HOST_RECORD_CONFIG); then
         echo "Get host database config failed"
         return 1
@@ -74,7 +84,7 @@ init_db_config() {
         echo "Create config dir failed"
         return 1
     fi
-    cat << EOF > "$HOST_RECORD_CONFIG"
+    cat <<EOF >"$HOST_RECORD_CONFIG"
 {
     "PartPasswds": [
     ],
@@ -87,7 +97,7 @@ EOF
 
 load_db_config() {
     local part_lines
-    
+
     if ! part_lines=$(jq -r ".PartPasswds[].password" "$HOST_RECORD_CONFIG"); then
         echo "Load db config failed"
         return 1
@@ -108,6 +118,8 @@ get_password_from_db() {
     local record_exist
     local record_index
     local record_passwd
+    local record_labels
+    local record_alias
 
     # 数据库中不存在，不再查询直接返回
     if [[ $HOST_RECORD_EXIST -eq 0 || $HOST_RECORD_ERROR -eq 1 ]]; then
@@ -126,8 +138,12 @@ get_password_from_db() {
     HOST_RECORD_EXIST=1
     # 获取记录信息
     record_passwd=$(jq -r ".NodeRecords.\"${record_index}\".password" "${HOST_RECORD_CONFIG}") || return 1
+    record_labels=$(jq -r ".NodeRecords.\"${record_index}\".labels" "${HOST_RECORD_CONFIG}") || return 1
+    record_alias=$(jq -r ".NodeRecords.\"${record_index}\".alias" "${HOST_RECORD_CONFIG}") || return 1
 
     USER_PASSWORD=$record_passwd
+    USER_LABELS=$record_labels
+    USER_ALIAS=$record_alias
     return 0
 }
 
@@ -141,7 +157,7 @@ update_password_db_record() {
     local record_index
     record_index=$(get_record_index)
     # 获取索引，更新索引对应的值
-    jq ".NodeRecords.\"${record_index}\" |= {\"password\": \"$USER_PASSWORD\"}" "$HOST_RECORD_CONFIG" > "$HOST_RECORD_CONFIG_TEMP" && mv -f "$HOST_RECORD_CONFIG_TEMP" "$HOST_RECORD_CONFIG"
+    jq ".NodeRecords.\"${record_index}\" |= {\"password\": \"$USER_PASSWORD\", \"labels\": \"$USER_LABELS\", \"alias\": \"$USER_ALIAS\"}" "$HOST_RECORD_CONFIG" >"$HOST_RECORD_CONFIG_TEMP" && mv -f "$HOST_RECORD_CONFIG_TEMP" "$HOST_RECORD_CONFIG"
     return $?
 }
 
@@ -204,8 +220,7 @@ get_password() {
     return 1
 }
 
-get_current_user_public_key()
-{
+get_current_user_public_key() {
     if [[ ! -f ${PUBLIC_KEY_PATH} ]]; then
         echo "public key file(${PUBLIC_KEY_PATH}) is not exists"
         return 1
@@ -215,8 +230,7 @@ get_current_user_public_key()
     return $?
 }
 
-get_remote_public_key_path()
-{
+get_remote_public_key_path() {
     if [[ "${USER_NAME}" == "${ROOT_USER_NAME}" ]]; then
         echo "/root/.ssh/authorized_keys"
     else
@@ -225,8 +239,7 @@ get_remote_public_key_path()
     return 0
 }
 
-is_public_key_exist_in_remote()
-{
+is_public_key_exist_in_remote() {
     local public_key=$1
     local remote_public_key_path
     local remote_public_keys
@@ -254,8 +267,7 @@ is_public_key_exist_in_remote()
     return 0
 }
 
-append_public_key_to_remote()
-{
+append_public_key_to_remote() {
     local public_key=$1
     local remote_public_key_path
     local remote_public_key_dir
@@ -284,8 +296,7 @@ append_public_key_to_remote()
     return 0
 }
 
-sync_public_key()
-{
+sync_public_key() {
     local public_key=
 
     if ! public_key=$(get_current_user_public_key); then
@@ -301,8 +312,7 @@ sync_public_key()
     return $?
 }
 
-login_run_command()
-{
+login_run_command() {
     local command=$1
 
     export SSHPASS=$USER_PASSWORD
@@ -311,8 +321,7 @@ login_run_command()
     return $?
 }
 
-test_password()
-{
+test_password() {
     # 在远程主机上执行exit 0命令，执行成功说明密码正确
     login_run_command "exit 0"
     return $?
@@ -351,7 +360,7 @@ get_login_target_from_db() {
 
     db_targets=$(jq -r '.NodeRecords | keys | .[]' "$HOST_RECORD_CONFIG")
 
-    targets=$(echo "$db_targets" | fzf --print-query)
+    targets=$(echo "$db_targets" | fzf --print-query --preview "bash ${0} -m preview -t {}")
     local errcode=$?
     if [[ $errcode -eq 130 ]]; then
         exit 1
@@ -366,11 +375,11 @@ get_login_target_from_db() {
 }
 
 init_login_target() {
-    # 解析target是否正确，不正确需要重新输入 
+    # 解析target是否正确，不正确需要重新输入
     test -z "$LOGIN_TARGET" && return 1
 
     [[ ! $LOGIN_TARGET =~ $LOGIN_TARGET_REGEX ]] && return 1
-    
+
     # target template: mike@192.168.2.1:22
     TEMP_STR="${LOGIN_TARGET%%:*}"
 
@@ -385,7 +394,7 @@ init_login_target() {
 get_login_target() {
     # 先从数据库中获取，获取失败或初始化失败时，重新获取
     while true; do
-        
+
         if ! get_login_target_from_db; then
             continue
         fi
@@ -430,45 +439,7 @@ auto_login() {
     return $?
 }
 
-main() {
-    local optstring=":P:p:u:i:c:dvhr"
-    OPTIND=0
-    SSH_AGENT=$SSH_AGENT_OPENSSH
-    while getopts $optstring opt "$@"; do
-        case $opt in
-            'd')
-                PASSWORD_APPEND_SUFFIX=0
-                ;;
-            'p')
-                USER_PASSWORD="$OPTARG"
-                ;;
-            'u')
-                USER_NAME="$OPTARG"
-                ;;
-            'v')
-                LOGIN_VERBOSE=1
-                ;;
-            'i')
-                USER_HOST="$OPTARG"
-                ;;
-            'c')
-                HOST_RECORD_CONFIG="$OPTARG"
-                HOST_RECORD_CONFIG_TEMP="${HOST_RECORD_CONFIG}.temp"
-                ;;
-            'r')
-                SSH_AGENT=$SSH_AGENT_SSHRC
-                ;;
-            'P')
-                USER_PORT="$OPTARG"
-                ;;
-            ':')
-                ;;
-            '?' | 'h')
-                help
-                ;;
-        esac
-    done
-
+cmd_login() {
     # 传入了密码，同时需要增加后缀
     if [[ $PASSWORD_APPEND_SUFFIX -eq 1 && -n $USER_PASSWORD ]]; then
         USER_PASSWORD="${USER_PASSWORD}${PASSWORD_SUFFIX}"
@@ -482,7 +453,93 @@ main() {
 
     load_db_config || exit 1
     auto_login
+}
+
+cmd_preview() {
+    if [[ -z $LOGIN_TARGET ]]; then
+        cmd_help
+    fi
+    if ! init_login_target; then
+        return 1
+    fi
+
+    if ! get_password_from_db; then
+        return 1
+    fi
+
+    echo "      ${LOGIN_TARGET} Preview"
+    echo "           Alias:    ${USER_ALIAS}"
+    echo "          Labels:    ${USER_LABELS}"
+    echo "        UserName:    ${USER_NAME}"
+    echo "        Password:    ${USER_PASSWORD}"
+    echo "            Host:    ${USER_HOST}"
+    echo "            Port:    ${USER_PORT}"
+    exit 0
+}
+
+main() {
+    local optstring=":P:p:u:i:l:c:a:m:t:dvhr"
+    OPTIND=0
+    SSH_AGENT=$SSH_AGENT_OPENSSH
+    while getopts $optstring opt "$@"; do
+        case $opt in
+        'd')
+            PASSWORD_APPEND_SUFFIX=0
+            ;;
+        'p')
+            USER_PASSWORD="$OPTARG"
+            ;;
+        'u')
+            USER_NAME="$OPTARG"
+            ;;
+        'v')
+            LOGIN_VERBOSE=1
+            ;;
+        'i')
+            USER_HOST="$OPTARG"
+            ;;
+        'c')
+            HOST_RECORD_CONFIG="$OPTARG"
+            HOST_RECORD_CONFIG_TEMP="${HOST_RECORD_CONFIG}.temp"
+            ;;
+        'r')
+            SSH_AGENT=$SSH_AGENT_SSHRC
+            ;;
+        'P')
+            USER_PORT="$OPTARG"
+            ;;
+        'l')
+            USER_LABELS="$OPTARG"
+            ;;
+        'a')
+            USER_ALIAS="$OPTARG"
+            ;;
+        'm')
+            RUN_MODE="$OPTARG"
+            ;;
+        't')
+            LOGIN_TARGET="$OPTARG"
+            ;;
+        ':') ;;
+        '?' | 'h')
+            cmd_help
+            ;;
+        esac
+    done
+
+    case $RUN_MODE in
+    "login")
+        cmd_login
+        ;;
+    "preview")
+        cmd_preview
+        ;;
+    *)
+        cmd_help
+        ;;
+    esac
+
     return $?
 }
 
-main "$@";
+main "$@"
